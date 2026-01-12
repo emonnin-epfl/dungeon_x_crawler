@@ -3,24 +3,25 @@ import { Hex } from "./hex.ts";
 import { Player } from "./player.ts";
 
 export class Renderer {
-    readonly canvas: HTMLCanvasElement
+    readonly canvas: HTMLCanvasElement;
     readonly ctx: CanvasRenderingContext2D;
     readonly layout: Layout;
     readonly background: string;
 
-    static readonly DEFAULT_HEX_DEPTH = 30
+    static readonly DEFAULT_HEX_DEPTH = 30;
     static readonly DEFAULT_BACKGROUND_FILL_COLOR: string  = "#282118ff";
 
     constructor(
-        canvas: HTMLCanvasElement, layout: Layout, background?: string,) {
+        canvas: HTMLCanvasElement, layout: Layout, background?: string) {
         this.canvas = canvas;
         this.ctx = canvas.getContext('2d')!;
         this.layout = layout;
 
         if(background) {
             this.background = background;
+        } else {
+            this.background = Renderer.DEFAULT_BACKGROUND_FILL_COLOR;
         }
-        this.background = Renderer.DEFAULT_BACKGROUND_FILL_COLOR;
     }
 
     clear(): void {
@@ -28,8 +29,8 @@ export class Renderer {
         const height = window.innerHeight;
 
         this.ctx.clearRect(0, 0, width, height);
-        this.ctx.fillStyle = (this.background);
-        this.ctx.fillRect(0, 0, width, height)
+        this.ctx.fillStyle = this.background;
+        this.ctx.fillRect(0, 0, width, height);
     }
 
     drawMap(map: Map<string, Hex>): void {
@@ -106,11 +107,11 @@ export class Renderer {
         // Here h/6 is a magic offset number to center vertically the player on the grid
         this.ctx.drawImage(sprite, -width / 2, player.y - height + height / 6);
 
-        this.ctx.restore()
+        this.ctx.restore();
     }
 
     drawPath(path: Array<Point2D>) {
-        const width = 20
+        const width = 20;
 
         if(path.length < 2) {
             throw new Error("Need at least 2 points to draw an arrow");
