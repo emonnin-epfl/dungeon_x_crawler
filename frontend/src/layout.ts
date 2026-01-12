@@ -1,4 +1,4 @@
-import {Hex} from "./hex.ts"
+import { Hex } from "./hex.ts"
 
 export interface Point2D {
     x: number;

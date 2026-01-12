@@ -3,27 +3,34 @@ import { Grid } from "./grid.ts";
 import { Player } from "./player.ts";
 import type { Point2D } from "./layout.ts";
 import { Hex } from "./hex.ts";
-import { createPubSub } from './utils.ts';
+import type { Notifier } from "./utils.ts";
+import { Ui, UiButton } from "./ui.ts";
 
-type GameEvent = {
+export type GameEvent = {
     hex_hovered: (hex: Hex) => void;
     hex_clicked: (hex: Hex) => void;
+    button_hovered: (button: UiButton) => void;
+    button_clicked: (button: UiButton) => void;
+    turn_skipped: () => void;
 };
 
 export class Game {
     player: Player;
     grid: Grid;
     isPlayerTurn: boolean;
-    pathState: {show: boolean, path: Array<Point2D>};
+    path: {show: boolean, goals: Array<Point2D>};
+    ui: Ui;
     renderer: Renderer;
-    notifier = createPubSub<GameEvent>();
+    notifier: Notifier<GameEvent>
 
-    constructor(player: Player, grid: Grid, renderer: Renderer) {
+    constructor(player: Player, grid: Grid, renderer: Renderer, notifier: Notifier<GameEvent>) {
         this.player = player,
         this.grid = grid,
         this.isPlayerTurn = true,
-        this.pathState = {show: false, path: []}
+        this.path = {show: false, goals: []}
+        this.ui = new Ui(notifier);
         this.renderer = renderer;
+        this.notifier = notifier;
     }
 
     start(): void {
@@ -46,22 +53,25 @@ export class Game {
     private draw(): void {
         this.renderer.clear();
         this.renderer.drawMap(this.grid.map);
-        if(this.pathState.show) {
-            this.renderer.drawPath(this.pathState.path);
+        if(this.path.show) {
+            this.renderer.drawPath(this.path.goals);
         }
         
         this.renderer.drawPlayer(this.player);
+
+        this.ui.buttons.forEach(btn => {
+            this.renderer.drawButton(btn);
+        });
     }
 
     private updatePlayer(): void {
         const player = this.player;
 
-        if (player.is("Moving") && this.pathState.path.length === 0) {
+        if (player.is("Moving") && this.path.goals.length === 0) {
             player.idle()
         }
-
-        if(player.is("Moving") && this.pathState.path.length > 0) {
-            const goal = this.pathState.path[0];
+        if(player.is("Moving") && this.path.goals.length > 0) {
+            const goal = this.path.goals[0];
             const dx = goal.x - player.x;
             const dy = goal.y - player.y;
 
@@ -75,7 +85,7 @@ export class Game {
             const distance = Math.sqrt(dx * dx + dy * dy);
 
             if (distance < player.speed) {
-                this.pathState.path.shift();
+                this.path.goals.shift();
                 player.x = goal.x
                 player.y = goal.y
                 return;
@@ -101,11 +111,24 @@ export class Game {
             this.showPathPreview(hex);
         });
 
+        this.notifier.on("turn_skipped", () => {
+            this.isPlayerTurn = !this.isPlayerTurn;
+            console.log(this.isPlayerTurn);
+        });
+
+        this.notifier.on("button_hovered", (button) => {
+            button.isHovered = true;
+            this.path.show = false;
+        });
+        this.notifier.on("button_clicked", (button) => {
+            if (this.player.is("Idle")) {
+                button.trigger();
+            }
+        });
+
         let resizeTimeout: number;
         // Temporary fix: only resize after 150ms of no dragging
         window.addEventListener('resize', () => {
-            this.pathState.show = false;
-            this.pathState.path = [];
             clearTimeout(resizeTimeout);
             resizeTimeout = setTimeout(() => this.resize(), 50); 
         });
@@ -114,25 +137,62 @@ export class Game {
         window.addEventListener('mousemove', (event) => this.handleMouseMove(event));
     }
 
-    private handleMouseClick(event: MouseEvent): void {
-        const rect = this.renderer.canvas.getBoundingClientRect();
-    
-        const hex = this.renderer.layout.pixelToHex({
-            x: event.clientX - rect.left, 
-            y: event.clientY - rect.top
-        });
-         this.notifier.emit("hex_clicked", hex);
-    }
 
     private handleMouseMove(event: MouseEvent): void {
-        const rect = this.renderer.canvas.getBoundingClientRect();
-    
-        const hex = this.renderer.layout.pixelToHex({
-            x: event.clientX - rect.left, 
-            y: event.clientY - rect.top
-        });
 
-        this.notifier.emit("hex_hovered", hex);
+        const button = this.getButtonFromEvent(event)
+        if (button) {
+            this.notifier.emit("button_hovered", button);
+            return;
+        }
+        const hex = this.getHexFromEvent(event);
+        if (hex) {
+            this.notifier.emit("hex_hovered", hex);
+        } else {
+            this.path.show = false;
+        }
+    }
+
+    private getHexFromEvent(event: MouseEvent): Hex | null {
+        const rect = this.renderer.canvas.getBoundingClientRect();
+
+        const hex = this.renderer.layout.pixelToHex({
+                x: event.clientX - rect.left, 
+                y: event.clientY - rect.top
+            });
+
+        if (this.grid.map.has(hex.hashCode())) {
+            return hex;
+        }
+        return null;
+    }
+
+    public getButtonFromEvent(event: MouseEvent): UiButton | null {
+        let hoveredButton = null;
+        const rect = this.renderer.canvas.getBoundingClientRect();
+
+        const x = event.clientX - rect.left;
+        const y = event.clientY - rect.top;
+   
+        for(const button of this.ui.buttons) {
+            if (button.isHit(x, y)) {
+                hoveredButton = button
+            }
+            button.isHovered = false;
+        }
+        return hoveredButton;
+    }
+
+    private handleMouseClick(event: MouseEvent): void {
+        const button = this.getButtonFromEvent(event)
+        if (button) {
+            this.notifier.emit("button_clicked", button);
+            return;
+        }
+        const hex = this.getHexFromEvent(event);
+        if (hex) {
+            this.notifier.emit("hex_clicked", hex);
+        }
     }
 
     private startPlayerAction(hex: Hex): void {
@@ -142,21 +202,17 @@ export class Game {
 
         if(this.grid.map.has(hex.hashCode())) {
             this.player.move()
-            this.pathState.show = false;
+            this.path.show = false;
         }
     }
 
     private showPathPreview(hex: Hex): void {
-         if(!this.player.is("Idle") || 
-            !this.isPlayerTurn ||
-            this.player.isAt(hex) || 
-            !this.grid.map.has(hex.hashCode())) 
-        {
-            this.pathState.show = false
+         if(!this.player.is("Idle") || !this.isPlayerTurn || this.player.isAt(hex)) {
+            this.path.show = false
             return;
         }
-
-        this.pathState.path = [];
+        
+        this.path.goals = [];
 
         const playerHex = this.grid.map.get(Hex.hashCode(this.player.q, this.player.r))
         if(!playerHex) {
@@ -166,41 +222,58 @@ export class Game {
         const path = this.grid.searchPath(playerHex, hex);
 
         for(const h of path) {
-            this.pathState.path.push(this.renderer.layout.hexToPixel(h));
+            this.path.goals.push(this.renderer.layout.hexToPixel(h));
         }
 
-        this.pathState.show = true;
+        this.path.show = true;
     }
 
     private resize(): void {
         const canvas = this.renderer.canvas;
+        const uiCanvas  =this.renderer.uiCanvas;
         const width = window.innerWidth;
         const height = window.innerHeight;
+        const dpr = window.devicePixelRatio;
 
         // Using the diff between the old/new origin of the canvas to calculate the new position of the player on the sceen
         const oldOriginX = this.renderer.layout.origin.x;
         const oldOriginY = this.renderer.layout.origin.y;
-
-        const offsetX = this.player.x - oldOriginX;
-        const offsetY = this.player.y - oldOriginY;
       
         canvas.width = width;
         canvas.height = height;
+        uiCanvas.width = width;
+        uiCanvas.height = height;
       
-        if(window.devicePixelRatio !== 1) {
-            canvas.width = width * window.devicePixelRatio;
-            canvas.height = height * window.devicePixelRatio;
+        if(dpr !== 1) {
+            canvas.width = width * dpr;
+            canvas.height = height * dpr;
+            uiCanvas.width = width * dpr;
+            uiCanvas.height = height * dpr;
         
             canvas.style.width = `${width}px`;
             canvas.style.height = `${height}px`;
-            this.renderer.ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+            uiCanvas.style.width = `${width}px`;
+            uiCanvas.style.height = `${height}px`;
+
+            this.renderer.ctx.scale(dpr, dpr);
+            this.renderer.uiCtx.scale(dpr, dpr);
         }
         
         const newOriginX = width / 2;
         const newOriginY = height / 2;
         this.renderer.layout.origin = { x: newOriginX, y: newOriginY };
 
+        let offsetX = this.player.x - oldOriginX;
+        let offsetY = this.player.y - oldOriginY;
+
         this.player.x = newOriginX + offsetX;
         this.player.y = newOriginY + offsetY;
+
+        for(const goal of this.path.goals) {
+            offsetX = goal.x - oldOriginX;
+            offsetY = goal.y - oldOriginY;
+            goal.x = newOriginX + offsetX;
+            goal.y = newOriginY + offsetY;
+        }
     }
 }

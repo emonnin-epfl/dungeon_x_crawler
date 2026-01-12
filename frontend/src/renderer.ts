@@ -1,10 +1,14 @@
 import { Layout, type Point2D } from "./layout.ts";
 import { Hex } from "./hex.ts";
 import { Player } from "./player.ts";
+import {UiButton} from "./ui.ts";
 
 export class Renderer {
     readonly canvas: HTMLCanvasElement;
     readonly ctx: CanvasRenderingContext2D;
+    readonly uiCanvas: HTMLCanvasElement;
+    readonly uiCtx: CanvasRenderingContext2D;
+
     readonly layout: Layout;
     readonly background: string;
 
@@ -12,9 +16,14 @@ export class Renderer {
     static readonly DEFAULT_BACKGROUND_FILL_COLOR: string  = "#282118ff";
 
     constructor(
-        canvas: HTMLCanvasElement, layout: Layout, background?: string) {
+        canvas: HTMLCanvasElement, ctx: CanvasRenderingContext2D,
+        uiCanvas: HTMLCanvasElement, uiCtx: CanvasRenderingContext2D, 
+        layout: Layout, background?: string
+    ) {
         this.canvas = canvas;
-        this.ctx = canvas.getContext('2d')!;
+        this.ctx = ctx;
+        this.uiCanvas = uiCanvas;
+        this.uiCtx = uiCtx;
         this.layout = layout;
 
         if(background) {
@@ -31,6 +40,8 @@ export class Renderer {
         this.ctx.clearRect(0, 0, width, height);
         this.ctx.fillStyle = this.background;
         this.ctx.fillRect(0, 0, width, height);
+
+        this.uiCtx.clearRect(0, 0, width, height);
     }
 
     drawMap(map: Map<string, Hex>): void {
@@ -137,5 +148,22 @@ export class Renderer {
             this.ctx.strokeStyle = "rgba(7, 51, 3, 0.91)";
             this.ctx.stroke();
         }
+    }
+
+    drawButton(btn: UiButton): void {
+        const ctx = this.uiCtx;
+        
+        ctx.fillStyle = btn.isHovered ? "#555" : "#333";
+        ctx.strokeStyle = Hex.DEFAULT_STROKE_COLOR;
+        ctx.lineWidth = 2;
+
+        ctx.fillRect(btn.x, btn.y, btn.width, btn.height);
+        ctx.strokeRect(btn.x, btn.y, btn.width, btn.height);
+
+        ctx.fillStyle = "white";
+        ctx.font = "16px sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(btn.label, btn.x + btn.width/2, btn.y + btn.height/2);
     }
 }

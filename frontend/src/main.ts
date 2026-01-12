@@ -1,12 +1,14 @@
 import './style.css'
 import { Game } from './game.ts';
-import {Renderer} from './renderer.ts'
-import type {PlayerAction} from './player.ts'
-import {Player} from './player.ts';
-import {Layout} from './layout.ts';
-import {Hex} from './hex.ts';
-import {AssetManager} from './asset.ts';
+import { Renderer } from './renderer.ts';
+import type { PlayerAction } from './player.ts';
+import { Player } from './player.ts';
+import { Layout } from './layout.ts';
+import { Hex } from './hex.ts';
+import { AssetManager } from './utils.ts';
 import { Grid } from './grid.ts';
+import { createNotifier } from './utils.ts';
+import type { GameEvent } from './game.ts';
 
 const assetManager = new AssetManager();
 const urls = new Map<string, Array<string>>();
@@ -28,35 +30,45 @@ urls.set(
 
 await assetManager.loadSprites(urls);
 
-document.querySelector<HTMLDivElement>('#app')!.innerHTML = `<canvas></canvas>`;
+document.querySelector<HTMLDivElement>('#app')!.innerHTML = 
+  `<canvas id="game-canvas"></canvas>
+    <canvas id="ui-canvas"></canvas>`;
 
-const canvas = document.querySelector('canvas')!;
-const ctx = canvas.getContext('2d')!
+const canvas = document.querySelector<HTMLCanvasElement>('#game-canvas')!;
+const uiCanvas = document.querySelector<HTMLCanvasElement>('#ui-canvas')!;
+const ctx = canvas.getContext('2d')!;
+const uiCtx = uiCanvas.getContext('2d')!;
 
-let width = window.innerWidth;
-let height = window.innerHeight;
+const width = window.innerWidth;
+const height = window.innerHeight;
+const dpr =  window.devicePixelRatio
 
 canvas.width = width;
 canvas.height = height;
 
 // Fixes rendering on my monitor
-if(window.devicePixelRatio !== 1){
+if(dpr !== 1){
 
     // scale the canvas by window.devicePixelRatio
-    canvas.width = width * window.devicePixelRatio;
-    canvas.height = height * window.devicePixelRatio;
+    canvas.width = width * dpr;
+    canvas.height = height * dpr;
+    uiCanvas.width = width * dpr;
+    uiCanvas.height = height *dpr;
 
     // use css to bring it back to regular size
     canvas.style.width = `${width}px`;
     canvas.style.height = `${height}px`;
+    uiCanvas.style.width = `${width}px`;
+    uiCanvas.style.height = `${height}px`;
 
     // set the scale of the context
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    ctx.scale(dpr, dpr);
+    uiCtx.scale(dpr, dpr);
  }
 
 // divide hex horizontal size by 2 to give an isometric look
 const layout = new Layout({x: width / 2, y: height / 2}, {x: 100, y: 50});
-const renderer = new Renderer(canvas, layout);
+const renderer = new Renderer(canvas, ctx, uiCanvas, uiCtx, layout);
 
 //Row r size is 2*N+1 - abs(N-r)
 const N = 4;
@@ -84,10 +96,10 @@ const sprites: Record<PlayerAction, Array<HTMLImageElement>> = {
 };
 
 const grid = new Grid(map)
-
 const playerHex = new Hex(-3, 0, 3);
 const {x, y} = layout.hexToPixel(new Hex(-3, 0, 3));
 const player = new Player(playerHex.q, playerHex.r, playerHex.s, x, y, sprites);
-const game = new Game(player, grid, renderer);
+const gameNotifier = createNotifier<GameEvent>();
+const game = new Game(player, grid, renderer, gameNotifier);
 
 game.start();
